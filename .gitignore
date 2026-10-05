@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.local
+.env.*.local
+
+# deps
+node_modules/
+
+# build
+dist/
+.vite/
+
+# python
+__pycache__/
+*.pyc
+
+# generated assets (figma exports)
+figma_out/
+
+# tooling / sources (not for runtime)
+tools/
