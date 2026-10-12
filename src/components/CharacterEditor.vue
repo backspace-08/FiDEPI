@@ -1,9 +1,13 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import IconChevron from './IconChevron.vue'
 import CharacterFigure from './CharacterFigure.vue'
 
-const emit = defineEmits(['hint', 'ready'])
+const emit = defineEmits(['hint'])
+
+const props = defineProps({
+  member: { type: Object, required: true },
+})
 
 const AXES = {
   female: {
@@ -31,81 +35,68 @@ const LABELS = {
   },
 }
 
-const name = ref('')
-const gender = ref(null)
-const clothing = ref(0)
-const hairStyle = ref(0)
-const hairColor = ref(0)
-const wrinkles = ref(false)
+const AXIS_KEY = { clothing: 'clothing', hairStyle: 'hair', hairColor: 'color' }
 
-const axes = computed(() => (gender.value ? AXES[gender.value] : null))
-const labels = computed(() => (gender.value ? LABELS[gender.value] : null))
-
-const index = { clothing, hairStyle, hairColor }
+const axes = computed(() => (props.member.gender ? AXES[props.member.gender] : null))
+const labels = computed(() => (props.member.gender ? LABELS[props.member.gender] : null))
 
 function labelFor(axis) {
   if (!labels.value) return ''
-  const value = axes.value[axis][index[axis].value]
-  return labels.value[axis][value] || ''
+  return labels.value[axis][props.member[AXIS_KEY[axis]]] || ''
 }
 
 function pickGender(value) {
-  gender.value = value
-  clothing.value = 0
-  hairStyle.value = 0
-  hairColor.value = 0
+  const m = props.member
+  m.gender = value
+  m.hair = value === 'female' ? 'mid' : 'a'
+  m.color = 'light'
+  m.clothing = value === 'female' ? 'blue' : 'jeans'
 }
 
 function cycle(axis, dir) {
-  if (!gender.value) {
+  const m = props.member
+  if (!m.gender) {
     emit('hint', 'Сначала выбери пол')
     return
   }
   const list = axes.value[axis]
-  const r = index[axis]
-  r.value = (r.value + dir + list.length) % list.length
+  const key = AXIS_KEY[axis]
+  const i = list.indexOf(m[key])
+  m[key] = list[(i + dir + list.length) % list.length]
 }
-
-const ready = computed(() => !!gender.value && name.value.trim().length > 0)
-watch(ready, (value) => emit('ready', value), { immediate: true })
-
-const age = computed(() => (wrinkles.value ? 'old' : 'young'))
-const clothingKey = computed(() => (axes.value ? axes.value.clothing[clothing.value] : null))
-const hairKey = computed(() => (axes.value ? axes.value.hairStyle[hairStyle.value] : null))
-const colorKey = computed(() => (axes.value ? axes.value.hairColor[hairColor.value] : null))
 </script>
 
 <template>
   <section class="editor">
-    <input v-model="name" class="editor__name" type="text" placeholder="Имя">
+    <input v-model="member.name" class="editor__name" type="text" placeholder="Имя">
 
     <div class="editor__stage">
       <CharacterFigure
         class="editor__figure"
-        :gender="gender"
-        :age="age"
-        :hair="hairKey"
-        :color="colorKey"
-        :clothing="clothingKey"
+        :gender="member.gender"
+        :age="member.age"
+        :hair="member.hair"
+        :color="member.color"
+        :clothing="member.clothing"
       />
     </div>
 
     <div class="editor__gender">
       <button
         class="gender gender--male"
-        :class="{ 'gender--active': gender === 'male' }"
+        :class="{ 'gender--active': member.gender === 'male' }"
         type="button"
         @click="pickGender('male')"
       >М</button>
       <button
         class="gender gender--female"
-        :class="{ 'gender--active': gender === 'female' }"
+        :class="{ 'gender--active': member.gender === 'female' }"
         type="button"
         @click="pickGender('female')"
       >Ж</button>
     </div>
 
-    <div class="editor__controls" :class="{ 'editor__controls--ghosted': !gender }">
+    <div class="editor__controls" :class="{ 'editor__controls--ghosted': !member.gender }">
       <div class="control">
         <span class="control__label">Одежда</span>
         <button class="control__arrow" type="button" @click="cycle('clothing', -1)"><IconChevron direction="left" /></button>
@@ -128,7 +119,11 @@ const colorKey = computed(() => (axes.value ? axes.value.hairColor[hairColor.val
       </div>
 
       <label class="control control--check">
-        <input v-model="wrinkles" type="checkbox">
+        <input
+          type="checkbox"
+          :checked="member.age === 'old'"
+          @change="member.age = $event.target.checked ? 'old' : 'young'"
+        >
         <span>Морщины</span>
       </label>
     </div>
@@ -137,7 +132,6 @@ const colorKey = computed(() => (axes.value ? axes.value.hairColor[hairColor.val
 
 <style scoped>
 .editor {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -155,14 +149,13 @@ const colorKey = computed(() => (axes.value ? axes.value.hairColor[hairColor.val
 }
 
 .editor__stage {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .editor__figure {
-  height: clamp(200px, 40vh, 420px);
+  height: clamp(160px, 32vh, 340px);
   width: auto;
 }
 

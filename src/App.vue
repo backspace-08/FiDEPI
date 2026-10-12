@@ -4,7 +4,7 @@ import PsychologistGreeting from './components/PsychologistGreeting.vue'
 import AvatarGallery from './components/AvatarGallery.vue'
 import CharacterAvatar from './components/CharacterAvatar.vue'
 import AvatarEditor from './components/AvatarEditor.vue'
-import CharacterEditor from './components/CharacterEditor.vue'
+import FamilyBuilder from './components/FamilyBuilder.vue'
 import { avatars, cropFor } from './avatars.js'
 
 const editorMode = new URLSearchParams(window.location.search).has('editor')
@@ -31,9 +31,9 @@ const scenes = [
     actionLabel: 'Создать мою семью',
   },
   {
-    id: 'editor',
-    type: 'editor',
-    text: 'Создай первого человека, который живёт вместе с тобой. Введи имя, выбери пол и настрой внешность.',
+    id: 'family',
+    type: 'family',
+    text: 'Создай людей, которые живут вместе с тобой.',
   },
 ]
 
@@ -49,19 +49,9 @@ function back() {
   if (index.value > 0) index.value -= 1
 }
 
-const editorReady = ref(false)
-const nextDisabled = computed(() => !!scene.value.actionLabel)
-const nextGhost = computed(
-  () => nextDisabled.value || (scene.value.type === 'editor' && !editorReady.value),
+const nextDisabled = computed(
+  () => !!scene.value.actionLabel || scene.value.type === 'family',
 )
-
-function onNext() {
-  if (scene.value.type === 'editor' && !editorReady.value) {
-    onHint('Сначала напиши имя и выбери внешность')
-    return
-  }
-  next()
-}
 
 const hint = ref('')
 let hintTimer
@@ -89,7 +79,7 @@ function onHint(text) {
         />
       </div>
       <AvatarGallery v-if="scene.type === 'demo'" />
-      <CharacterEditor v-else-if="scene.type === 'editor'" @hint="onHint" @ready="editorReady = $event" />
+      <FamilyBuilder v-else-if="scene.type === 'family'" @hint="onHint" @start="next" />
 
       <p v-if="hint" class="corner__hint">{{ hint }}</p>
     </section>
@@ -98,7 +88,7 @@ function onHint(text) {
       <button v-if="scene.actionLabel" class="action-button" type="button" @click="next">{{ scene.actionLabel }}</button>
       <div class="actions__row">
         <button class="action-button" :class="{ 'action-button--ghost': index === 0 }" type="button" :disabled="index === 0" @click="back">Назад</button>
-        <button class="action-button" :class="{ 'action-button--ghost': nextGhost }" type="button" :disabled="nextDisabled" @click="onNext">Далее</button>
+        <button class="action-button" :class="{ 'action-button--ghost': nextDisabled }" type="button" :disabled="nextDisabled" @click="next">Далее</button>
       </div>
     </footer>
   </main>
@@ -128,7 +118,7 @@ function onHint(text) {
   bottom: 5rem;
   left: 0;
   right: 0;
-  z-index: 20;
+  z-index: 60;
   width: fit-content;
   margin-inline: auto;
   max-width: min(90vw, 26rem);
