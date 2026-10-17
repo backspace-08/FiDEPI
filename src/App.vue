@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue'
 import PsychologistGreeting from './components/PsychologistGreeting.vue'
-import AvatarGallery from './components/AvatarGallery.vue'
+import MailDemo from './components/MailDemo.vue'
 import CharacterAvatar from './components/CharacterAvatar.vue'
 import AvatarEditor from './components/AvatarEditor.vue'
 import FamilyBuilder from './components/FamilyBuilder.vue'
+import StrangerIntro from './components/StrangerIntro.vue'
+import MailboxesScene from './components/MailboxesScene.vue'
 import { avatars, cropFor } from './avatars.js'
 
 const editorMode = new URLSearchParams(window.location.search).has('editor')
@@ -19,21 +21,35 @@ const scenes = [
     text: 'А вот и я! Теперь ты всегда сможешь найти меня здесь, в правом верхнем углу. Если тебе станет непонятно, что делать, нажми на меня — я постараюсь помочь.',
   },
   {
-    id: 'mail',
+    id: 'mail1',
     type: 'message',
-    text: 'Сегодня мы с тобой будем играть в почту. В этой игре ты будешь почтальоном, твоя задача разносить письма близким для тебя людям. После создания семьи тебе будут приходить разные письма. Твоя задача — прочитать каждое письмо и решить, кому оно подходит больше всего. После этого ты отправишь письмо в почтовый ящик этого человека. Здесь нет правильных или неправильных ответов. Чтобы получить верные данные, просто выбирай того, кому письмо подходит больше всего.',
+    text: 'Сегодня мы с тобой будем играть в почту. В этой игре ты будешь почтальоном, твоя задача разносить письма близким для тебя людям. После создания семьи тебе будут приходить разные письма.',
   },
-  { id: 'demo', type: 'demo' },
+  {
+    id: 'mail2',
+    type: 'message',
+    text: 'Твоя задача — прочитать каждое письмо и решить, кому оно подходит больше всего. После этого ты отправишь письмо в почтовый ящик этого человека. Здесь нет правильных или неправильных ответов. Чтобы получить верные данные, просто выбирай того, кому письмо подходит больше всего.',
+    demo: true,
+  },
   {
     id: 'create-family',
     type: 'message',
     text: 'Но сначала нам нужно подготовить твою игру. Создай всех людей, которые живут вместе с тобой в одном доме. Не переживай, если твоя семья отличается от других. У каждой семьи всё может быть по-разному.',
     actionLabel: 'Создать мою семью',
   },
+  { id: 'family', type: 'family' },
   {
-    id: 'family',
-    type: 'family',
-    text: 'Создай людей, которые живут вместе с тобой.',
+    id: 'stranger',
+    type: 'stranger',
+    text: 'А это — Незнакомец. Он не живёт с тобой и не относится к твоей семье. Иногда тебе будут попадаться письма, которые не подходят ни одному человеку из твоей семьи. В таком случае ты сможешь отправить письмо Незнакомцу.',
+  },
+  { id: 'mailboxes', type: 'mailboxes', text: 'У каждого персонажа появился свой почтовый ящик.' },
+  {
+    id: 'bag',
+    type: 'bag',
+    text: 'Вот и наша почта! В этом мешке находятся письма. Доставай их по одному, читай и отправляй тому человеку, которому они подходят больше всего.',
+    actionLabel: 'Достать письмо',
+    actionInline: true,
   },
 ]
 
@@ -42,16 +58,30 @@ const scene = computed(() => scenes[index.value])
 const isCorner = computed(() => index.value >= 1)
 
 function next() {
+  say.value = ''
+  letterActive.value = false
   if (index.value < scenes.length - 1) index.value += 1
 }
 
 function back() {
+  say.value = ''
+  letterActive.value = false
   if (index.value > 0) index.value -= 1
 }
 
 const nextDisabled = computed(
   () => !!scene.value.actionLabel || scene.value.type === 'family',
 )
+const backDisabled = computed(
+  () => index.value === 0 || scene.value.type === 'bag',
+)
+
+const say = ref('')
+const drawSignal = ref(0)
+const letterActive = ref(false)
+function drawLetter() {
+  drawSignal.value += 1
+}
 
 const hint = ref('')
 let hintTimer
@@ -69,7 +99,7 @@ function onHint(text) {
 
     <section v-if="isCorner" class="corner">
       <div class="corner__top">
-        <p v-if="scene.text" :key="scene.id" class="corner__message" :style="{ animationDelay: scene.id === 'here' ? '0.4s' : '0s' }">{{ scene.text }}</p>
+        <p v-if="scene.text || say" :key="say || scene.id" class="corner__message" :style="{ animationDelay: scene.id === 'here' ? '0.4s' : '0s' }">{{ say || scene.text }}</p>
         <CharacterAvatar
           class="corner__psych"
           :src="psychologist.src"
@@ -78,17 +108,35 @@ function onHint(text) {
           size="var(--psych-size)"
         />
       </div>
-      <AvatarGallery v-if="scene.type === 'demo'" />
-      <FamilyBuilder v-else-if="scene.type === 'family'" @hint="onHint" @start="next" />
+      <MailDemo v-if="scene.demo" />
+      <FamilyBuilder v-else-if="scene.type === 'family'" @hint="onHint" @start="next" @say="say = $event" />
+      <StrangerIntro v-else-if="scene.type === 'stranger'" />
+      <MailboxesScene
+        v-else-if="scene.type === 'mailboxes' || scene.type === 'bag'"
+        :bag="scene.type === 'bag'"
+        :draw-signal="drawSignal"
+        @say="say = $event"
+        @letter-active="letterActive = $event"
+      />
 
       <p v-if="hint" class="corner__hint">{{ hint }}</p>
     </section>
 
-    <footer class="actions">
-      <button v-if="scene.actionLabel" class="action-button" type="button" @click="next">{{ scene.actionLabel }}</button>
-      <div class="actions__row">
-        <button class="action-button" :class="{ 'action-button--ghost': index === 0 }" type="button" :disabled="index === 0" @click="back">Назад</button>
-        <button class="action-button" :class="{ 'action-button--ghost': nextDisabled }" type="button" :disabled="nextDisabled" @click="next">Далее</button>
+    <footer class="actions" :class="{ 'actions--bag': scene.type === 'bag' }">
+      <div class="actions__group" :class="{ 'actions__group--row': scene.actionInline }">
+        <button v-if="scene.actionLabel && !scene.actionInline" class="action-button" type="button" @click="next">{{ scene.actionLabel }}</button>
+        <button
+          v-if="scene.actionInline"
+          class="action-button actions__action"
+          :class="{ 'action-button--ghost': letterActive }"
+          type="button"
+          :disabled="letterActive"
+          @click="drawLetter"
+        >{{ scene.actionLabel }}</button>
+        <div class="actions__nav">
+          <button class="action-button" :class="{ 'action-button--ghost': backDisabled }" type="button" :disabled="backDisabled" @click="back">Назад</button>
+          <button class="action-button" :class="{ 'action-button--ghost': nextDisabled }" type="button" :disabled="nextDisabled" @click="next">Далее</button>
+        </div>
       </div>
     </footer>
   </main>
@@ -98,19 +146,22 @@ function onHint(text) {
 .page {
   display: flex;
   flex-direction: column;
-  min-height: 100svh;
+  height: 100svh;
+  overflow: hidden;
   background-color: var(--color-bg);
 }
 
 .corner {
   --psych-size: clamp(50px, 20vw, 150px);
+  --bag-size: clamp(120px, 24vw, 230px);
   position: relative;
   flex: 1;
+  min-height: 0;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  padding: var(--space-4);
+  padding: calc( max(var(--psych-size), 8rem) + var(--space-2)) var(--space-4) var(--space-4);
 }
 
 .corner__hint {
@@ -135,14 +186,21 @@ function onHint(text) {
 }
 
 .corner__top {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  left: var(--space-4);
+  z-index: 5;
   display: flex;
   justify-content: flex-end;
   align-items: flex-start;
   gap: var(--space-4);
+  pointer-events: none;
 }
 
 .corner__psych {
   flex: 0 0 auto;
+  pointer-events: auto;
   animation: rise-in 0.5s var(--ease) both;
 }
 
@@ -166,13 +224,54 @@ function onHint(text) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-4);
   padding: var(--space-4);
 }
 
-.actions__row {
+.actions__group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.actions__group--row {
+  flex-direction: row;
+  width: 100%;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.actions__nav {
   display: flex;
   gap: var(--space-3);
+}
+
+.actions--bag .actions__nav {
+  animation: nav-in 0.45s var(--ease) both;
+}
+
+.actions__action {
+  animation: slide-in-left 0.4s var(--ease) 0.1s both;
+}
+
+@keyframes nav-in {
+  from {
+    transform: translateX(-30vw);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .action-button {

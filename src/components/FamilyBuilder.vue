@@ -4,7 +4,9 @@ import CharacterEditor from './CharacterEditor.vue'
 import CharacterFigure from './CharacterFigure.vue'
 import IconAdd from './IconAdd.vue'
 
-const emit = defineEmits(['hint', 'start'])
+const emit = defineEmits(['hint', 'start', 'say'])
+
+const FINISH_LINE = 'Посмотри ещё раз на свою семью. Здесь все люди, которые живут вместе с тобой? Если всё правильно — нажимай «Начать игру».'
 
 const STORAGE_KEY = 'fidepi-family'
 const MAX = 8
@@ -37,10 +39,20 @@ watch(
   { deep: true },
 )
 
+const ADD_LINE = 'Отлично! Если с тобой живёт ещё кто-нибудь, можешь добавить его.'
+
+const sayText = computed(() => {
+  if (confirmed.value) return FINISH_LINE
+  if (editing.value !== null) return ''
+  if (members.value.some((m) => !(m.gender && m.name.trim()))) return 'Нажми на персонажа, чтобы изменить'
+  if (members.value.length === 1) return ADD_LINE
+  return ''
+})
+watch(sayText, (value) => emit('say', value))
+
 onMounted(() => {
-  const first = members.value[selected.value]
-  if (!first.gender || !first.name.trim()) editing.value = selected.value
   window.addEventListener('keydown', onKeydown)
+  emit('say', sayText.value)
 })
 
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
@@ -57,10 +69,10 @@ const editingReady = computed(() => {
 function select(i) {
   selected.value = i
   editing.value = i
+  confirmed.value = false
 }
 
 function addMember() {
-  emit('hint', 'Отлично! Если с тобой живёт ещё кто-нибудь, можешь добавить его.')
   if (!canAdd.value) return
   members.value.push(newMember())
   selected.value = members.value.length - 1
@@ -115,7 +127,6 @@ function confirmFamily() {
     return
   }
   confirmed.value = true
-  emit('hint', 'Посмотри ещё раз на свою семью. Здесь все люди, которые живут с тобой? Если всё правильно — нажимай «Начать игру».')
 }
 
 function startGame() {
@@ -170,11 +181,14 @@ function startGame() {
 <style scoped>
 .family {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--space-5);
   width: 100%;
+  overflow-y: auto;
 }
 
 .family__row {

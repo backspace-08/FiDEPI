@@ -14,10 +14,12 @@ import psychImage from '../../svg/normalized/special_out/psych.svg'
 <style scoped>
 .stage {
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
+  overflow-y: auto;
 }
 
 .psychologist {

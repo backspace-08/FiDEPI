@@ -16,11 +16,13 @@ import CharacterAvatar from './CharacterAvatar.vue'
 .gallery {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   justify-content: center;
   gap: var(--space-3);
   width: 100%;
   max-width: 20rem;
   margin-inline: auto;
+  overflow-y: auto;
 }
 
 .gallery__item {
