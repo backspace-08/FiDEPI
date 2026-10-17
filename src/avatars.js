@@ -53,3 +53,18 @@ export function cropFor(id) {
   const key = id === 'neutral' ? 'stranger' : id
   return { ...DEFAULT_CROP, ...(crops[key] || {}) }
 }
+
+const FEMALE_BY_HAIR = {
+  short: 'female_short',
+  mid: 'female_mid',
+  long: 'female_long',
+  bald: 'female_short',
+}
+const MALE_BY_OUTFIT = { jeans: 'male_a', whitetee: 'male_b', costume: 'male_c' }
+
+export function cropForMember(member) {
+  if (!member || !member.gender) return cropFor('stranger')
+  const key =
+    member.gender === 'female' ? FEMALE_BY_HAIR[member.hair] : MALE_BY_OUTFIT[member.clothing]
+  return cropFor(key || 'female_mid')
+}

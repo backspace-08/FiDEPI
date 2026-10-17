@@ -8,6 +8,7 @@ const props = defineProps({
   alt: { type: String, default: '' },
   size: { type: String, default: '4rem' },
   crop: { type: Object, default: null },
+  shape: { type: String, default: 'circle' },
 })
 
 const style = computed(() => {
@@ -22,7 +23,7 @@ const style = computed(() => {
 </script>
 
 <template>
-  <span class="avatar" :style="style">
+  <span class="avatar" :class="{ 'avatar--rounded': shape === 'rounded' }" :style="style">
     <img v-if="src" class="avatar__media" :src="src" :alt="alt">
     <CharacterFigure v-else-if="figure" class="avatar__media avatar__figure" v-bind="figure" />
   </span>
@@ -39,6 +40,10 @@ const style = computed(() => {
   overflow: hidden;
   background-color: var(--color-surface);
   vertical-align: middle;
+}
+
+.avatar--rounded {
+  border-radius: 28%;
 }
 
 .avatar__media {
