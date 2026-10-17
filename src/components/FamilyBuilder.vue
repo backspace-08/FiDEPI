@@ -16,15 +16,28 @@ function newMember() {
   return { id, name: '', gender: null, age: 'young', hair: 'mid', color: 'light', clothing: 'blue' }
 }
 
+function normalizeMember(m) {
+  return {
+    id: m.id || crypto?.randomUUID?.() || String(Date.now() + Math.random()),
+    name: typeof m.name === 'string' ? m.name : '',
+    gender: m.gender === 'male' || m.gender === 'female' ? m.gender : null,
+    age: m.age === 'old' ? 'old' : 'young',
+    hair: typeof m.hair === 'string' ? m.hair : 'mid',
+    color: typeof m.color === 'string' ? m.color : 'light',
+    clothing: typeof m.clothing === 'string' ? m.clothing : 'blue',
+  }
+}
+
 function load() {
   try {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
-    if (Array.isArray(data) && data.length) return data
+    if (Array.isArray(data) && data.length) return data.map(normalizeMember)
   } catch {}
   return null
 }
 
-const members = ref(load() || [newMember()])
+const savedFamily = load()
+const members = ref(savedFamily || [newMember()])
 const selected = ref(0)
 const editing = ref(null)
 const confirmed = ref(false)
@@ -44,13 +57,20 @@ const ADD_LINE = 'Отлично! Если с тобой живёт ещё кт�
 const sayText = computed(() => {
   if (confirmed.value) return FINISH_LINE
   if (editing.value !== null) return ''
-  if (members.value.some((m) => !(m.gender && m.name.trim()))) return 'Нажми на персонажа, чтобы изменить'
+  if (members.value.some((m) => !(m.gender && String(m.name).trim()))) return 'Нажми на персонажа, чтобы изменить'
   if (members.value.length === 1) return ADD_LINE
   return ''
 })
 watch(sayText, (value) => emit('say', value))
 
 onMounted(() => {
+  if (savedFamily) {
+    const i = members.value.findIndex((m) => !(m.gender && String(m.name).trim()))
+    if (i !== -1) {
+      selected.value = i
+      editing.value = i
+    }
+  }
   window.addEventListener('keydown', onKeydown)
   emit('say', sayText.value)
 })
@@ -58,12 +78,12 @@ onMounted(() => {
 onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 const allReady = computed(
-  () => members.value.length > 0 && members.value.every((m) => m.gender && m.name.trim().length > 0),
+  () => members.value.length > 0 && members.value.every((m) => m.gender && String(m.name).trim().length > 0),
 )
 const canAdd = computed(() => members.value.length < MAX && allReady.value)
 const editingReady = computed(() => {
   const m = editing.value !== null ? members.value[editing.value] : null
-  return !!(m && m.gender && m.name.trim())
+  return !!(m && m.gender && String(m.name).trim())
 })
 
 function select(i) {
@@ -101,8 +121,8 @@ function closeEditor() {
 function cancelEditing() {
   if (editing.value === null) return
   const m = members.value[editing.value]
-  const filled = !!(m.gender && m.name.trim())
-  const blank = !m.gender && !m.name.trim()
+  const filled = !!(m.gender && String(m.name).trim())
+  const blank = !m.gender && !String(m.name).trim()
   if (filled) {
     editing.value = null
     return
