@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import PsychologistGreeting from './components/PsychologistGreeting.vue'
 import MailDemo from './components/MailDemo.vue'
 import CharacterAvatar from './components/CharacterAvatar.vue'
@@ -57,6 +57,27 @@ const index = ref(0)
 const scene = computed(() => scenes[index.value])
 const isCorner = computed(() => index.value >= 1)
 
+const topRef = ref(null)
+const topZone = ref(0)
+let topObserver
+function measureTop() {
+  if (topRef.value) topZone.value = topRef.value.offsetHeight
+}
+function observeTop() {
+  topObserver?.disconnect()
+  const el = topRef.value
+  if (!el) return
+  topZone.value = el.offsetHeight
+  topObserver = new ResizeObserver(measureTop)
+  topObserver.observe(el)
+}
+watch(isCorner, async (value) => {
+  if (!value) return
+  await nextTick()
+  observeTop()
+})
+onBeforeUnmount(() => topObserver?.disconnect())
+
 function next() {
   say.value = ''
   letterActive.value = false
@@ -97,8 +118,12 @@ function onHint(text) {
   <main v-else class="page">
     <PsychologistGreeting v-if="scene.type === 'greeting'" />
 
-    <section v-if="isCorner" class="corner">
-      <div class="corner__top">
+    <section
+      v-if="isCorner"
+      class="corner"
+      :style="scene.demo && topZone ? { paddingTop: `calc(var(--space-4) + ${topZone}px + var(--space-3))` } : null"
+    >
+      <div ref="topRef" class="corner__top">
         <p v-if="scene.text || say" :key="say || scene.id" class="corner__message" :style="{ animationDelay: scene.id === 'here' ? '0.4s' : '0s' }">{{ say || scene.text }}</p>
         <CharacterAvatar
           class="corner__psych"
