@@ -4,9 +4,10 @@ import CharacterAvatar from './CharacterAvatar.vue'
 import BagScene from './BagScene.vue'
 import LetterCard from './LetterCard.vue'
 import { cropFor, cropForMember } from '../avatars.js'
-import { pickQuestions } from '../data/questions.js'
+import { pickQuestions, QUESTION_BY_N } from '../data/questions.js'
 import { PHRASES } from '../data/phrases.js'
-import { playAudio } from '../lib/audio.js'
+import { playAudio, preloadAudio } from '../lib/audio.js'
+import { assessment } from '../lib/assessment.js'
 import VoiceToggleButton from './VoiceToggleButton.vue'
 import stranger from '../../svg/normalized/special_out/stranger.svg'
 import mailbox from '../../svg/normalized/props/mailbox.svg'
@@ -18,6 +19,7 @@ const props = defineProps({
   backDisabled: { type: Boolean, default: false },
   nextDisabled: { type: Boolean, default: false },
   voiceEnabled: { type: Boolean, default: false },
+  members: { type: Array, default: null },
 })
 
 const emit = defineEmits(['say', 'letter-active', 'answered', 'complete', 'back', 'next', 'toggle-voice'])
@@ -31,9 +33,12 @@ function shuffle(items) {
   return result
 }
 
-// null — полный набор (65). Для быстрой отладки можно поставить 10.
-const DEV_QUESTION_LIMIT = null
-const queue = shuffle(pickQuestions(DEV_QUESTION_LIMIT))
+if (!assessment.questionOrder.length) {
+  assessment.questionOrder = shuffle(pickQuestions(null)).map((question) => question.n)
+}
+const queue = assessment.questionOrder
+  .map((n) => QUESTION_BY_N.get(n))
+  .filter(Boolean)
 const total = queue.length
 
 function loadFamily() {
@@ -44,8 +49,9 @@ function loadFamily() {
   return []
 }
 
+const family = computed(() => (props.members?.length ? props.members : loadFamily()))
 const rows = computed(() => [
-  ...loadFamily().map((m) => ({
+  ...family.value.map((m) => ({
     id: m.id,
     name: m.name || 'Без имени',
     figure: m,
@@ -54,7 +60,7 @@ const rows = computed(() => [
   { id: 'stranger', name: 'Незнакомец', src: stranger, crop: cropFor('stranger') },
 ])
 
-const delivered = ref(0)
+const delivered = ref(assessment.delivered || 0)
 const done = ref(false)
 
 const showCounter = ref(false)
@@ -80,16 +86,38 @@ const slotLetterRef = ref(null)
 const flyerRef = ref(null)
 
 const flying = ref(false)
-const letterInSlot = ref(false)
-const reading = ref(false)
+const restoredQuestion =
+  assessment.currentN != null ? QUESTION_BY_N.get(assessment.currentN) : null
+const letterInSlot = ref(Boolean(restoredQuestion) && assessment.stage === 'slot')
+const reading = ref(Boolean(restoredQuestion) && assessment.stage === 'reading')
 const sending = ref(false)
-const currentLetter = ref(null)
-const currentQuestion = ref(null)
+const currentLetter = ref(restoredQuestion?.text || null)
+const currentQuestion = ref(restoredQuestion || null)
 
 const busy = computed(
   () => flying.value || letterInSlot.value || reading.value || sending.value,
 )
-watch(busy, (value) => emit('letter-active', value))
+watch(busy, (value) => emit('letter-active', value), { immediate: true })
+
+watch(
+  [delivered, currentQuestion, reading, letterInSlot],
+  () => {
+    assessment.delivered = delivered.value
+    assessment.currentN = currentQuestion.value?.n ?? null
+    assessment.stage = reading.value ? 'reading' : letterInSlot.value ? 'slot' : null
+  },
+  { immediate: true },
+)
+
+function preloadUpcoming() {
+  const next = queue[delivered.value]
+  if (next) preloadAudio(`q-${next.n}.ogg`)
+  const after = queue[delivered.value + 1]
+  if (after) preloadAudio(`q-${after.n}.ogg`)
+}
+
+if (restoredQuestion) preloadAudio(`q-${restoredQuestion.n}.ogg`)
+preloadUpcoming()
 
 function center(el) {
   const r = el?.getBoundingClientRect?.()
@@ -142,12 +170,13 @@ async function drawLetter() {
   currentQuestion.value = question
   currentLetter.value = question.text
   reading.value = true
+  preloadUpcoming()
   playQuestion(question)
   emit('say', PHRASES.readLetter)
 }
 
 function openLetter() {
-  if (!letterInSlot.value) return
+  if (!props.bag || !letterInSlot.value) return
   letterInSlot.value = false
   reading.value = true
   playQuestion(currentQuestion.value)
@@ -182,7 +211,7 @@ async function closeLetter() {
 }
 
 async function deliverTo(event, memberId) {
-  if (!letterInSlot.value || reading.value || sending.value) return
+  if (!props.bag || !letterInSlot.value || reading.value || sending.value) return
   const row = event.currentTarget
   const target = row?.querySelector?.('.row__mailbox')
   const letterEl = slotLetterRef.value
@@ -211,6 +240,7 @@ async function deliverTo(event, memberId) {
   currentLetter.value = null
   sending.value = false
   delivered.value += 1
+  preloadUpcoming()
   if (question) emit('answered', { n: question.n, memberId })
   if (delivered.value === total) {
     emit('complete')
@@ -237,7 +267,7 @@ watch(
         v-for="(row, i) in rows"
         :key="row.id"
         class="row"
-        :class="{ 'row--target': letterInSlot && !reading }"
+        :class="{ 'row--target': bag && letterInSlot && !reading }"
         :style="{ animationDelay: `${i * 0.1}s` }"
         @click="deliverTo($event, row.id)"
       >
@@ -297,7 +327,7 @@ watch(
 
     <img v-if="flying" ref="flyerRef" class="mailboxes__flyer" :src="letterIcon" alt="">
 
-    <div v-if="reading" class="mailboxes__letter" @click.self="closeLetter">
+    <div v-if="reading && bag" class="mailboxes__letter" @click.self="closeLetter">
       <LetterCard :text="currentLetter" @listen="playCurrentLetter" @close="closeLetter" />
     </div>
   </section>

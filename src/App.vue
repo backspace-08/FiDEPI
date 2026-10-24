@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PsychologistGreeting from './components/PsychologistGreeting.vue'
 import MailDemo from './components/MailDemo.vue'
 import CharacterAvatar from './components/CharacterAvatar.vue'
@@ -13,7 +13,8 @@ import VoiceToggleButton from './components/VoiceToggleButton.vue'
 import { avatars, cropFor } from './avatars.js'
 import { DEMO_ANSWERS, DEMO_MEMBERS } from './data/preview.js'
 import { PHRASES } from './data/phrases.js'
-import { playAudio, stopAudio } from './lib/audio.js'
+import { playAudio, preloadAudio, stopAudio } from './lib/audio.js'
+import { assessment, startAssessment } from './lib/assessment.js'
 
 const editorMode = new URLSearchParams(window.location.search).has('editor')
 const previewResults = new URLSearchParams(window.location.search).has('preview-results')
@@ -77,17 +78,42 @@ const scenes = [
   },
 ]
 
-const index = ref(0)
+const RESUMABLE_TYPES = new Set(['stranger', 'mailboxes', 'bag', 'finish', 'result'])
+const savedScene =
+  scenes.find((item) => item.id === assessment.sceneId) ?? scenes[assessment.sceneIndex]
+const savedIndex = scenes.indexOf(savedScene)
+const canResume = Boolean(
+  assessment.family.length &&
+    assessment.questionOrder.length &&
+    savedScene &&
+    RESUMABLE_TYPES.has(savedScene.type),
+)
+const index = ref(canResume ? savedIndex : 0)
 const scene = computed(() => scenes[index.value])
 const isCorner = computed(() => index.value >= 1 && scene.value.type !== 'finish')
 
 const say = ref('')
-const answers = ref([])
-const completed = ref(false)
+const completed = computed(() => assessment.completed)
 const drawSignal = ref(0)
 const letterActive = ref(false)
 const resultAudio = ref(null)
-const voiceEnabled = ref(false)
+const voiceEnabled = computed({
+  get: () => assessment.voiceEnabled,
+  set: (value) => {
+    assessment.voiceEnabled = value
+  },
+})
+
+function preloadSceneAudio() {
+  if (scene.value.audio) preloadAudio(scene.value.audio)
+  if (
+    (scene.value.type === 'mailboxes' || scene.value.type === 'bag') &&
+    assessment.questionOrder.length
+  ) {
+    const nextN = assessment.questionOrder[assessment.delivered]
+    if (nextN != null) preloadAudio(`q-${nextN}.ogg`)
+  }
+}
 
 function toggleVoice() {
   voiceEnabled.value = !voiceEnabled.value
@@ -103,7 +129,10 @@ function toggleVoice() {
   if (scene.value.audio) playAudio(scene.value.audio, scene.value.text || '')
 }
 
-watch(index, () => {
+watch(index, (value) => {
+  assessment.sceneIndex = value
+  assessment.sceneId = scene.value.id
+  preloadSceneAudio()
   if (!voiceEnabled.value) return
   if (scene.value.type === 'result') return
   if (scene.value.audio) playAudio(scene.value.audio, scene.value.text || '')
@@ -135,15 +164,31 @@ watch(isCorner, async (value) => {
   observeTop()
 })
 onBeforeUnmount(() => topObserver?.disconnect())
+onMounted(() => {
+  if (editorMode || previewResults) return
+  assessment.sceneIndex = index.value
+  assessment.sceneId = scene.value.id
+  if (
+    scene.value.type === 'bag' &&
+    (assessment.completed ||
+      (assessment.questionOrder.length > 0 &&
+        assessment.delivered >= assessment.questionOrder.length))
+  ) {
+    assessment.completed = true
+    next()
+  }
+  preloadSceneAudio()
+})
 
 function next() {
   say.value = ''
   letterActive.value = false
-  if (scene.value.type === 'family') {
-    answers.value = []
-    completed.value = false
-  }
   if (index.value < scenes.length - 1) index.value += 1
+}
+
+function onFamilyStart(members) {
+  startAssessment(members)
+  next()
 }
 
 function back() {
@@ -163,11 +208,11 @@ function drawLetter() {
   drawSignal.value += 1
 }
 function onAnswered(answer) {
-  answers.value.push(answer)
+  assessment.answers.push(answer)
 }
 let finishTimer
 function onComplete() {
-  completed.value = true
+  assessment.completed = true
   clearTimeout(finishTimer)
   finishTimer = setTimeout(() => {
     if (scene.value.type === 'bag') next()
@@ -175,6 +220,7 @@ function onComplete() {
 }
 function onResultAudio(payload) {
   resultAudio.value = payload
+  if (payload?.audio) preloadAudio(payload.audio)
 }
 onBeforeUnmount(() => clearTimeout(finishTimer))
 
@@ -215,7 +261,7 @@ function onHint(text) {
         />
       </div>
       <MailDemo v-if="scene.demo" />
-      <FamilyBuilder v-else-if="scene.type === 'family'" @hint="onHint" @start="next" @say="say = $event" />
+      <FamilyBuilder v-else-if="scene.type === 'family'" @hint="onHint" @start="onFamilyStart" @say="say = $event" />
       <StrangerIntro v-else-if="scene.type === 'stranger'" />
       <MailboxesScene
         v-else-if="scene.type === 'mailboxes' || scene.type === 'bag'"
@@ -224,6 +270,7 @@ function onHint(text) {
         :back-disabled="backDisabled"
         :next-disabled="nextDisabled"
         :voice-enabled="voiceEnabled"
+        :members="assessment.family.length ? assessment.family : null"
         @say="say = $event"
         @letter-active="letterActive = $event"
         @answered="onAnswered"
@@ -232,7 +279,12 @@ function onHint(text) {
         @next="next"
         @toggle-voice="toggleVoice"
       />
-      <ResultsScene v-else-if="scene.type === 'result'" :answers="answers" @audio-context="onResultAudio" />
+      <ResultsScene
+        v-else-if="scene.type === 'result'"
+        :answers="assessment.answers"
+        :members="assessment.family.length ? assessment.family : null"
+        @audio-context="onResultAudio"
+      />
 
       <p v-if="hint" class="corner__hint">{{ hint }}</p>
     </section>

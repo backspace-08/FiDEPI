@@ -150,7 +150,7 @@ function confirmFamily() {
 }
 
 function startGame() {
-  emit('start')
+  emit('start', members.value)
 }
 </script>
 

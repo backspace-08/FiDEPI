@@ -5,6 +5,17 @@ export function audioUrl(name) {
 }
 
 let player = null
+const preloadCache = new Map()
+
+export function preloadAudio(name) {
+  if (!name || preloadCache.has(name)) return
+  const audio = new Audio()
+  audio.preload = 'auto'
+  audio.src = audioUrl(name)
+  audio.addEventListener('error', () => preloadCache.delete(name), { once: true })
+  audio.load()
+  preloadCache.set(name, audio)
+}
 
 function stopPlayer() {
   if (!player) return
@@ -29,11 +40,35 @@ export function playAudio(name, fallbackText = '') {
     return
   }
   stopPlayer()
-  const audio = new Audio(audioUrl(name))
-  player = audio
-  audio.play().catch(() => {
+
+  let audio = preloadCache.get(name)
+  if (!audio) {
+    audio = new Audio(audioUrl(name))
+    preloadCache.set(name, audio)
+  }
+
+  let handled = false
+  const onError = () => {
+    if (handled) return
+    handled = true
+    audio.removeEventListener('error', onError)
+    preloadCache.delete(name)
     if (player === audio) player = null
     speakFallback(fallbackText)
+  }
+  audio.addEventListener('error', onError, { once: true })
+
+  try {
+    audio.currentTime = 0
+  } catch {}
+  player = audio
+
+  audio.play().catch((error) => {
+    if (error?.name === 'NotAllowedError' || error?.name === 'AbortError') {
+      if (player === audio) player = null
+      return
+    }
+    onError()
   })
 }
 
