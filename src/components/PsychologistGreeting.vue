@@ -1,11 +1,12 @@
 <script setup>
 import psychImage from '../../svg/normalized/special_out/psych.svg'
+import { PHRASES } from '../data/phrases.js'
 </script>
 
 <template>
   <section class="stage">
     <div class="psychologist">
-      <p class="psychologist__message">Привет! Я рада тебя видеть. Добро пожаловать в FiDEPI — инновационный проект, который помогает понимать эмоциональное состояние и отношения людей. Сегодня тебе предстоит небольшая игра. После её прохождения ты сможешь узнать кое-что новое о себе. Я буду рядом с тобой на протяжении всей игры и помогу тебе, если что-то будет непонятно.</p>
+      <p class="psychologist__message">{{ PHRASES.greeting }}</p>
       <img class="psychologist__image" :src="psychImage" alt="Психолог" width="160" height="388">
     </div>
   </section>

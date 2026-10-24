@@ -7,55 +7,113 @@ import AvatarEditor from './components/AvatarEditor.vue'
 import FamilyBuilder from './components/FamilyBuilder.vue'
 import StrangerIntro from './components/StrangerIntro.vue'
 import MailboxesScene from './components/MailboxesScene.vue'
+import FinishScene from './components/FinishScene.vue'
+import ResultsScene from './components/ResultsScene.vue'
+import VoiceToggleButton from './components/VoiceToggleButton.vue'
 import { avatars, cropFor } from './avatars.js'
+import { DEMO_ANSWERS, DEMO_MEMBERS } from './data/preview.js'
+import { PHRASES } from './data/phrases.js'
+import { playAudio, stopAudio } from './lib/audio.js'
 
 const editorMode = new URLSearchParams(window.location.search).has('editor')
+const previewResults = new URLSearchParams(window.location.search).has('preview-results')
 const psychologist = avatars.find((a) => a.id === 'psychologist')
 const psychologistCrop = cropFor('psychologist')
 
 const scenes = [
-  { id: 'greeting', type: 'greeting' },
+  { id: 'greeting', type: 'greeting', text: PHRASES.greeting, audio: 'psych-greeting.ogg' },
   {
     id: 'here',
     type: 'message',
-    text: 'А вот и я! Теперь ты всегда сможешь найти меня здесь, в правом верхнем углу. Если тебе станет непонятно, что делать, нажми на меня — я постараюсь помочь.',
+    text: PHRASES.here,
+    audio: 'psych-here.ogg',
   },
   {
     id: 'mail1',
     type: 'message',
-    text: 'Сегодня мы с тобой будем играть в почту. В этой игре ты будешь почтальоном, твоя задача разносить письма близким для тебя людям. После создания семьи тебе будут приходить разные письма.',
+    text: PHRASES.mail1,
+    audio: 'psych-mail1.ogg',
   },
   {
     id: 'mail2',
     type: 'message',
-    text: 'Твоя задача — прочитать каждое письмо и решить, кому оно подходит больше всего. После этого ты отправишь письмо в почтовый ящик этого человека. Здесь нет правильных или неправильных ответов. Чтобы получить верные данные, просто выбирай того, кому письмо подходит больше всего.',
+    text: PHRASES.mail2,
+    audio: 'psych-mail2.ogg',
     demo: true,
   },
   {
     id: 'create-family',
     type: 'message',
-    text: 'Но сначала нам нужно подготовить твою игру. Создай всех людей, которые живут вместе с тобой в одном доме. Не переживай, если твоя семья отличается от других. У каждой семьи всё может быть по-разному.',
+    text: PHRASES.createFamily,
+    audio: 'psych-createFamily.ogg',
     actionLabel: 'Создать мою семью',
   },
   { id: 'family', type: 'family' },
   {
     id: 'stranger',
     type: 'stranger',
-    text: 'А это — Незнакомец. Он не живёт с тобой и не относится к твоей семье. Иногда тебе будут попадаться письма, которые не подходят ни одному человеку из твоей семьи. В таком случае ты сможешь отправить письмо Незнакомцу.',
+    text: PHRASES.stranger,
+    audio: 'psych-stranger.ogg',
   },
-  { id: 'mailboxes', type: 'mailboxes', text: 'У каждого персонажа появился свой почтовый ящик.' },
+  { id: 'mailboxes', type: 'mailboxes', text: PHRASES.mailboxes, audio: 'psych-mailboxes.ogg' },
   {
     id: 'bag',
     type: 'bag',
-    text: 'Вот и наша почта! В этом мешке находятся письма. Доставай их по одному, читай и отправляй тому человеку, которому они подходят больше всего.',
+    text: PHRASES.bag,
+    audio: 'psych-bag.ogg',
     actionLabel: 'Достать письмо',
     actionInline: true,
+  },
+  {
+    id: 'finish',
+    type: 'finish',
+    text: PHRASES.finish,
+    audio: 'psych-finish.ogg',
+    actionLabel: 'Посмотреть результат',
+  },
+  {
+    id: 'result',
+    type: 'result',
   },
 ]
 
 const index = ref(0)
 const scene = computed(() => scenes[index.value])
-const isCorner = computed(() => index.value >= 1)
+const isCorner = computed(() => index.value >= 1 && scene.value.type !== 'finish')
+
+const say = ref('')
+const answers = ref([])
+const completed = ref(false)
+const drawSignal = ref(0)
+const letterActive = ref(false)
+const resultAudio = ref(null)
+const voiceEnabled = ref(false)
+
+function toggleVoice() {
+  voiceEnabled.value = !voiceEnabled.value
+  if (!voiceEnabled.value) {
+    stopAudio()
+    return
+  }
+  if (scene.value.type === 'result') {
+    if (resultAudio.value) playAudio(resultAudio.value.audio, resultAudio.value.text)
+    return
+  }
+  if (letterActive.value) return
+  if (scene.value.audio) playAudio(scene.value.audio, scene.value.text || '')
+}
+
+watch(index, () => {
+  if (!voiceEnabled.value) return
+  if (scene.value.type === 'result') return
+  if (scene.value.audio) playAudio(scene.value.audio, scene.value.text || '')
+})
+
+watch(resultAudio, (payload) => {
+  if (!voiceEnabled.value) return
+  if (payload) playAudio(payload.audio, payload.text)
+  else stopAudio()
+})
 
 const topRef = ref(null)
 const topZone = ref(0)
@@ -81,6 +139,10 @@ onBeforeUnmount(() => topObserver?.disconnect())
 function next() {
   say.value = ''
   letterActive.value = false
+  if (scene.value.type === 'family') {
+    answers.value = []
+    completed.value = false
+  }
   if (index.value < scenes.length - 1) index.value += 1
 }
 
@@ -91,18 +153,30 @@ function back() {
 }
 
 const nextDisabled = computed(
-  () => !!scene.value.actionLabel || scene.value.type === 'family',
+  () => !!scene.value.actionLabel || scene.value.type === 'family' || scene.value.type === 'result',
 )
 const backDisabled = computed(
-  () => index.value === 0 || scene.value.type === 'bag',
+  () => index.value === 0 || ['bag', 'mailboxes', 'finish', 'result'].includes(scene.value.type),
 )
 
-const say = ref('')
-const drawSignal = ref(0)
-const letterActive = ref(false)
 function drawLetter() {
   drawSignal.value += 1
 }
+function onAnswered(answer) {
+  answers.value.push(answer)
+}
+let finishTimer
+function onComplete() {
+  completed.value = true
+  clearTimeout(finishTimer)
+  finishTimer = setTimeout(() => {
+    if (scene.value.type === 'bag') next()
+  }, 1200)
+}
+function onResultAudio(payload) {
+  resultAudio.value = payload
+}
+onBeforeUnmount(() => clearTimeout(finishTimer))
 
 const hint = ref('')
 let hintTimer
@@ -115,12 +189,19 @@ function onHint(text) {
 
 <template>
   <AvatarEditor v-if="editorMode" />
+  <main v-else-if="previewResults" class="page">
+    <section class="preview">
+      <ResultsScene :answers="DEMO_ANSWERS" :members="DEMO_MEMBERS" initial-view="psychologist" />
+    </section>
+  </main>
   <main v-else class="page">
     <PsychologistGreeting v-if="scene.type === 'greeting'" />
+    <FinishScene v-else-if="scene.type === 'finish'" :text="scene.text" />
 
     <section
       v-if="isCorner"
       class="corner"
+      :class="{ 'corner--bag': scene.type === 'bag' }"
       :style="scene.demo && topZone ? { paddingTop: `calc(var(--space-4) + ${topZone}px + var(--space-3))` } : null"
     >
       <div ref="topRef" class="corner__top">
@@ -140,26 +221,36 @@ function onHint(text) {
         v-else-if="scene.type === 'mailboxes' || scene.type === 'bag'"
         :bag="scene.type === 'bag'"
         :draw-signal="drawSignal"
+        :back-disabled="backDisabled"
+        :next-disabled="nextDisabled"
+        :voice-enabled="voiceEnabled"
         @say="say = $event"
         @letter-active="letterActive = $event"
+        @answered="onAnswered"
+        @complete="onComplete"
+        @back="back"
+        @next="next"
+        @toggle-voice="toggleVoice"
       />
+      <ResultsScene v-else-if="scene.type === 'result'" :answers="answers" @audio-context="onResultAudio" />
 
       <p v-if="hint" class="corner__hint">{{ hint }}</p>
     </section>
 
     <footer class="actions" :class="{ 'actions--bag': scene.type === 'bag' }">
       <div class="actions__group" :class="{ 'actions__group--row': scene.actionInline }">
-        <button v-if="scene.actionLabel && !scene.actionInline" class="action-button" type="button" @click="next">{{ scene.actionLabel }}</button>
+        <button v-if="scene.actionLabel && !scene.actionInline" class="action-button" :class="{ 'action-button--primary': scene.type === 'finish' }" type="button" @click="next">{{ scene.actionLabel }}</button>
         <button
           v-if="scene.actionInline"
           class="action-button actions__action"
           :class="{ 'action-button--ghost': letterActive }"
           type="button"
-          :disabled="letterActive"
+          :disabled="letterActive || completed"
           @click="drawLetter"
         >{{ scene.actionLabel }}</button>
-        <div class="actions__nav">
+        <div v-if="scene.type !== 'finish'" class="actions__nav">
           <button class="action-button" :class="{ 'action-button--ghost': backDisabled }" type="button" :disabled="backDisabled" @click="back">Назад</button>
+          <VoiceToggleButton :enabled="voiceEnabled" @toggle="toggleVoice" />
           <button class="action-button" :class="{ 'action-button--ghost': nextDisabled }" type="button" :disabled="nextDisabled" @click="next">Далее</button>
         </div>
       </div>
@@ -174,6 +265,14 @@ function onHint(text) {
   height: 100svh;
   overflow: hidden;
   background-color: var(--color-bg);
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-4);
 }
 
 .corner {
@@ -313,6 +412,12 @@ function onHint(text) {
   border-color: transparent;
 }
 
+.action-button--primary {
+  color: var(--color-surface);
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;
@@ -332,6 +437,16 @@ function onHint(text) {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@media (min-width: 1024px) {
+  .actions--bag {
+    display: none;
+  }
+
+  .corner--bag {
+    padding-bottom: var(--space-7);
   }
 }
 </style>

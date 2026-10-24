@@ -4,6 +4,10 @@ import CharacterAvatar from './CharacterAvatar.vue'
 import BagScene from './BagScene.vue'
 import LetterCard from './LetterCard.vue'
 import { cropFor, cropForMember } from '../avatars.js'
+import { pickQuestions } from '../data/questions.js'
+import { PHRASES } from '../data/phrases.js'
+import { playAudio } from '../lib/audio.js'
+import VoiceToggleButton from './VoiceToggleButton.vue'
 import stranger from '../../svg/normalized/special_out/stranger.svg'
 import mailbox from '../../svg/normalized/props/mailbox.svg'
 import letterIcon from '../../svg/normalized/props/letter.svg'
@@ -11,22 +15,26 @@ import letterIcon from '../../svg/normalized/props/letter.svg'
 const props = defineProps({
   bag: { type: Boolean, default: false },
   drawSignal: { type: Number, default: 0 },
+  backDisabled: { type: Boolean, default: false },
+  nextDisabled: { type: Boolean, default: false },
+  voiceEnabled: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['say', 'letter-active'])
+const emit = defineEmits(['say', 'letter-active', 'answered', 'complete', 'back', 'next', 'toggle-voice'])
 
-const QUESTIONS = [
-  'Этот член семьи очень хороший.',
-  'Этот член семьи очень весёлый.',
-  'Этот член семьи всегда помогает другим.',
-  'С этим членом семьи хорошо играть.',
-  'Этот член семьи очень добрый.',
-  'Этот член семьи заслуживает хорошего подарка.',
-  'Мне нравится обнимать этого члена семьи.',
-  'Этот член семьи иногда придирается.',
-  'Этот член семьи очень меня любит.',
-  'Этот член семьи всегда выслушает меня.',
-]
+function shuffle(items) {
+  const result = [...items]
+  for (let i = result.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
+// null — полный набор (65). Для быстрой отладки можно поставить 10.
+const DEV_QUESTION_LIMIT = null
+const queue = shuffle(pickQuestions(DEV_QUESTION_LIMIT))
+const total = queue.length
 
 function loadFamily() {
   try {
@@ -47,9 +55,11 @@ const rows = computed(() => [
 ])
 
 const delivered = ref(0)
+const done = ref(false)
 
 const showCounter = ref(false)
 let counterTimer
+let doneTimer
 watch(
   () => props.bag,
   (bag) => {
@@ -59,7 +69,10 @@ watch(
   },
   { immediate: true },
 )
-onBeforeUnmount(() => clearTimeout(counterTimer))
+onBeforeUnmount(() => {
+  clearTimeout(counterTimer)
+  clearTimeout(doneTimer)
+})
 
 const bagRef = ref(null)
 const slotRef = ref(null)
@@ -71,7 +84,7 @@ const letterInSlot = ref(false)
 const reading = ref(false)
 const sending = ref(false)
 const currentLetter = ref(null)
-let questionIndex = 0
+const currentQuestion = ref(null)
 
 const busy = computed(
   () => flying.value || letterInSlot.value || reading.value || sending.value,
@@ -119,23 +132,44 @@ const screenCenter = () => ({ x: innerWidth / 2, y: innerHeight / 2 })
 
 async function drawLetter() {
   if (busy.value) return
-  const question = QUESTIONS[questionIndex % QUESTIONS.length]
-  questionIndex += 1
+  const question = queue[delivered.value]
+  if (!question) return
 
   const from = center(bagRef.value?.$el)
   const to = screenCenter()
   await flyBetween(from, to, { duration: 600, startScale: 0.4 })
 
-  currentLetter.value = question
+  currentQuestion.value = question
+  currentLetter.value = question.text
   reading.value = true
-  emit('say', 'Прочитай письмо и реши, кому его отправить.')
+  playQuestion(question)
+  emit('say', PHRASES.readLetter)
 }
 
 function openLetter() {
   if (!letterInSlot.value) return
   letterInSlot.value = false
   reading.value = true
+  playQuestion(currentQuestion.value)
 }
+
+function playQuestion(question) {
+  if (!props.voiceEnabled || !question) return
+  playAudio(`q-${question.n}.ogg`, question.text)
+}
+
+function playCurrentLetter() {
+  const question = currentQuestion.value
+  if (!question) return
+  playAudio(`q-${question.n}.ogg`, question.text)
+}
+
+watch(
+  () => props.voiceEnabled,
+  (enabled) => {
+    if (enabled && reading.value) playQuestion(currentQuestion.value)
+  },
+)
 
 async function closeLetter() {
   if (!reading.value) return
@@ -144,10 +178,10 @@ async function closeLetter() {
   const to = center(slotRef.value)
   await flyBetween(from, to, { duration: 450, startScale: 0.6 })
   letterInSlot.value = true
-  emit('say', 'Нажми на того, кому хочешь отправить письмо.')
+  emit('say', PHRASES.chooseMember)
 }
 
-async function deliverTo(event) {
+async function deliverTo(event, memberId) {
   if (!letterInSlot.value || reading.value || sending.value) return
   const row = event.currentTarget
   const target = row?.querySelector?.('.row__mailbox')
@@ -171,10 +205,17 @@ async function deliverTo(event) {
     await anim.finished
   } catch {}
 
+  const question = currentQuestion.value
   letterInSlot.value = false
+  currentQuestion.value = null
   currentLetter.value = null
   sending.value = false
   delivered.value += 1
+  if (question) emit('answered', { n: question.n, memberId })
+  if (delivered.value === total) {
+    emit('complete')
+    doneTimer = setTimeout(() => (done.value = true), 500)
+  }
 }
 
 watch(
@@ -186,9 +227,9 @@ watch(
 </script>
 
 <template>
-  <section class="mailboxes">
+  <section class="mailboxes" :class="{ 'mailboxes--done': done, 'mailboxes--bag': bag }">
     <div class="mailboxes__counter" :class="{ 'mailboxes__counter--visible': showCounter }">
-      Писем доставлено: {{ delivered }} из 50
+      Писем доставлено: {{ delivered }} из {{ total }}
     </div>
 
     <div class="mailboxes__list">
@@ -198,7 +239,7 @@ watch(
         class="row"
         :class="{ 'row--target': letterInSlot && !reading }"
         :style="{ animationDelay: `${i * 0.1}s` }"
-        @click="deliverTo"
+        @click="deliverTo($event, row.id)"
       >
         <CharacterAvatar
           class="row__avatar"
@@ -214,25 +255,50 @@ watch(
     </div>
 
     <div v-if="bag" class="mailboxes__bottom">
-      <BagScene ref="bagRef" />
-      <div ref="slotRef" class="mailboxes__slot">
+      <div class="mailboxes__bag">
+        <BagScene ref="bagRef" />
         <button
-          v-if="letterInSlot"
-          ref="slotLetterRef"
-          class="mailboxes__slot-letter"
+          class="mailboxes__draw"
           type="button"
-          aria-label="Прочитать письмо"
-          @click="openLetter"
-        >
-          <img :src="letterIcon" alt="">
-        </button>
+          :disabled="busy || delivered >= total"
+          @click="drawLetter"
+        >Достать письмо</button>
+      </div>
+      <div class="mailboxes__side">
+        <div ref="slotRef" class="mailboxes__slot">
+          <button
+            v-if="letterInSlot"
+            ref="slotLetterRef"
+            class="mailboxes__slot-letter"
+            type="button"
+            aria-label="Прочитать письмо"
+            @click="openLetter"
+          >
+            <img :src="letterIcon" alt="">
+          </button>
+        </div>
+        <div class="mailboxes__nav">
+          <button
+            class="mailboxes__nav-btn"
+            type="button"
+            :disabled="backDisabled"
+            @click="emit('back')"
+          >Назад</button>
+          <VoiceToggleButton :enabled="voiceEnabled" @toggle="emit('toggle-voice')" />
+          <button
+            class="mailboxes__nav-btn"
+            type="button"
+            :disabled="nextDisabled"
+            @click="emit('next')"
+          >Далее</button>
+        </div>
       </div>
     </div>
 
     <img v-if="flying" ref="flyerRef" class="mailboxes__flyer" :src="letterIcon" alt="">
 
     <div v-if="reading" class="mailboxes__letter" @click.self="closeLetter">
-      <LetterCard :text="currentLetter" @listen="() => {}" @close="closeLetter" />
+      <LetterCard :text="currentLetter" @listen="playCurrentLetter" @close="closeLetter" />
     </div>
   </section>
 </template>
@@ -248,6 +314,16 @@ watch(
   align-items: center;
   gap: var(--space-3);
   width: 100%;
+}
+
+.mailboxes--done .mailboxes__counter,
+.mailboxes--done .mailboxes__list,
+.mailboxes--done .mailboxes__bottom,
+.mailboxes--done .mailboxes__bag,
+.mailboxes--done .mailboxes__side {
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity 0.6s var(--ease), transform 0.6s var(--ease);
 }
 
 .mailboxes__counter {
@@ -315,6 +391,40 @@ watch(
   justify-content: space-between;
   gap: var(--space-3);
   width: 100%;
+}
+
+.mailboxes__bag,
+.mailboxes__side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.mailboxes__draw,
+.mailboxes__nav {
+  display: none;
+}
+
+.mailboxes__nav {
+  gap: var(--space-2);
+}
+
+.mailboxes__draw,
+.mailboxes__nav-btn {
+  padding: var(--space-2) var(--space-3);
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.mailboxes__draw:disabled,
+.mailboxes__nav-btn:disabled {
+  color: var(--color-text-muted);
+  background-color: transparent;
+  border-color: transparent;
+  cursor: default;
 }
 
 .mailboxes__slot {
@@ -399,6 +509,58 @@ watch(
   100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 rgb(75 132 209 / 0), 0 8px 20px rgb(0 0 0 / 0.15);
+  }
+}
+
+@media (min-width: 1024px) {
+  .mailboxes--bag {
+    display: grid;
+    grid-template-columns: minmax(9rem, 15rem) minmax(0, 1fr) minmax(9rem, 15rem);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "counter counter counter"
+      "bag list side";
+    align-items: end;
+    justify-items: center;
+    column-gap: var(--space-5);
+    row-gap: var(--space-4);
+  }
+
+  .mailboxes--bag .mailboxes__counter {
+    grid-area: counter;
+  }
+
+  .mailboxes--bag .mailboxes__list {
+    grid-area: list;
+    align-self: stretch;
+    width: 100%;
+    max-width: 34rem;
+    min-height: 0;
+    max-height: 100%;
+  }
+
+  .mailboxes--bag .mailboxes__bottom {
+    display: contents;
+  }
+
+  .mailboxes--bag .mailboxes__bag {
+    grid-area: bag;
+  }
+
+  .mailboxes--bag .mailboxes__side {
+    grid-area: side;
+  }
+
+  .mailboxes--bag .mailboxes__draw {
+    display: block;
+  }
+
+  .mailboxes--bag .mailboxes__nav {
+    display: flex;
+  }
+
+  .row {
+    width: min(100%, 28rem);
   }
 }
 </style>
