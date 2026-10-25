@@ -290,7 +290,8 @@ function onHint(text) {
     </section>
 
     <footer class="actions" :class="{ 'actions--bag': scene.type === 'bag' }">
-      <div class="actions__group" :class="{ 'actions__group--row': scene.actionInline }">
+      <div class="actions__group" :class="{ 'actions__group--row': scene.actionInline, 'actions__group--finish': scene.type === 'finish' }">
+        <VoiceToggleButton v-if="scene.type === 'finish'" :enabled="voiceEnabled" @toggle="toggleVoice" />
         <button v-if="scene.actionLabel && !scene.actionInline" class="action-button" :class="{ 'action-button--primary': scene.type === 'finish' }" type="button" @click="next">{{ scene.actionLabel }}</button>
         <button
           v-if="scene.actionInline"
@@ -414,6 +415,12 @@ function onHint(text) {
   flex-direction: row;
   width: 100%;
   justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.actions__group--finish {
+  flex-direction: row;
+  align-items: center;
   gap: var(--space-3);
 }
 

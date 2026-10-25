@@ -18,8 +18,10 @@ defineEmits(['toggle'])
     :aria-pressed="enabled"
     @click.stop="$emit('toggle')"
   >
-    <IconVolume v-if="enabled" />
-    <IconVolumeOff v-else />
+    <Transition name="voice-icon" mode="out-in">
+      <IconVolume v-if="enabled" key="on" />
+      <IconVolumeOff v-else key="off" />
+    </Transition>
   </button>
 </template>
 
@@ -35,6 +37,7 @@ defineEmits(['toggle'])
   border: 2px solid var(--color-border);
   border-radius: var(--radius-sm);
   cursor: pointer;
+  animation: voice-in 0.5s var(--ease) 0.6s both;
   transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
@@ -46,5 +49,27 @@ defineEmits(['toggle'])
 
 .voice-toggle:hover {
   border-color: var(--color-primary);
+}
+
+.voice-icon-enter-active,
+.voice-icon-leave-active {
+  transition: opacity 0.15s var(--ease), transform 0.15s var(--ease);
+}
+
+.voice-icon-enter-from,
+.voice-icon-leave-to {
+  opacity: 0;
+  transform: scale(0.7);
+}
+
+@keyframes voice-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 </style>

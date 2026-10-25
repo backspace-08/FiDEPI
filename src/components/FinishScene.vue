@@ -1,6 +1,5 @@
 <script setup>
 import psychImage from '../../svg/normalized/special_out/psych.svg'
-import AudioIconButton from './AudioIconButton.vue'
 
 defineProps({
   text: { type: String, default: '' },
@@ -41,7 +40,6 @@ const confetti = Array.from({ length: 30 }, (_, index) => ({
     </div>
     <div class="finish__inner">
       <p class="finish__message">{{ text }}</p>
-      <AudioIconButton audio="psych-finish.ogg" :text="text" />
       <img class="finish__image" :src="psychImage" alt="Психолог" width="160" height="388">
     </div>
   </section>
