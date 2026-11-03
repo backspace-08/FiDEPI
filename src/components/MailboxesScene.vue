@@ -6,7 +6,7 @@ import LetterCard from './LetterCard.vue'
 import { cropFor, cropForMember } from '../avatars.js'
 import { pickQuestions, QUESTION_BY_N } from '../data/questions.js'
 import { PHRASES } from '../data/phrases.js'
-import { playAudio, preloadAudio } from '../lib/audio.js'
+import { cancelPendingAudio, playAudio, preloadAudio } from '../lib/audio.js'
 import { assessment } from '../lib/assessment.js'
 import VoiceToggleButton from './VoiceToggleButton.vue'
 import stranger from '../../svg/normalized/special_out/stranger.svg'
@@ -212,6 +212,7 @@ async function closeLetter() {
 
 async function deliverTo(event, memberId) {
   if (!props.bag || !letterInSlot.value || reading.value || sending.value) return
+  cancelPendingAudio()
   const row = event.currentTarget
   const target = row?.querySelector?.('.row__mailbox')
   const letterEl = slotLetterRef.value
